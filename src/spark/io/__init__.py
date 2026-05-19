@@ -1,3 +1,3 @@
-from .load import load_cube
+from .load import load_spectral_product
 
-__all__ = ['load_cube',]
+__all__ = ['load_spectral_product',]
