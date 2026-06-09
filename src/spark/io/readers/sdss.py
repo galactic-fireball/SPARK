@@ -1,3 +1,4 @@
+from astropy.io import fits
 import astropy.units as u
 from dataclasses import dataclass
 import numpy as np
@@ -10,24 +11,27 @@ SDSS_WAVE_UNIT = u.AA
 
 @dataclass
 class SDSSSpectrum(SparkSpec):
+    disp: float = 0.0
 
     @classmethod
     def from_fits(cls, hdu, **kwargs):
 
         name = None
+        inst_data = {}
         hdu_close = False
         if isinstance(hdu, (str,pathlib.Path)):
             hdu = pathlib.Path(hdu)
-            hdu = fits.open(hdu)
+            inst_data['file'] = hdu
+            hdul = fits.open(hdu)
             hdu_close = True
             name = hdu.stem
+            hdu = hdul
 
         if name is None:
             name = kwargs.pop('name', str(hdu[2].data['SPECOBJID'][0]))
 
         data = hdu[1].data
 
-        inst_data = {}
         inst_data['wave'] = np.power(10, data['loglam'])
         inst_data['wave_unit'] = SDSS_WAVE_UNIT
         inst_data['flux'] = data['flux']
@@ -36,6 +40,7 @@ class SDSSSpectrum(SparkSpec):
         err[np.isinf(err)] = np.nanmedian(err)
         inst_data['err'] = err
         inst_data['flux_unit'] = sc.FLUX_UNIT_AA
+        inst_data['disp'] = data['wdisp'] # Intrinsic dispersion of every pixel, in pixels units
 
         inst_data['target'] = ObservationTarget(
             name = name,
