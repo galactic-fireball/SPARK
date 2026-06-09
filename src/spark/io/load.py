@@ -22,18 +22,17 @@ def get_fits_fmt(hdu):
 
 
 def load_spectral_product(spec_file, fmt=None, **kwargs):
-	hdu = fits.open(spec_file)
-
 	if fmt is None:
+		hdu = fits.open(spec_file)
 		fmt = get_fits_fmt(hdu)
+		hdu.close()
 	if fmt is None:
 		raise Exception('Could not determine fits format')
 	if not fmt in SPEC_FMTS:
 		raise Exception('Unsupported format: %s'%fmt)
 
-	spec = SPEC_FMTS[fmt].from_fits(hdu, **kwargs)
+	spec = SPEC_FMTS[fmt].from_fits(spec_file, **kwargs)
 	if spec.file is None:
 		spec.file = pathlib.Path(spec_file)
 
-	hdu.close()
 	return spec
