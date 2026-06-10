@@ -1,12 +1,12 @@
 from __future__ import annotations
 import astropy.units as u
 from astropy.wcs import WCS
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, fields
 from matplotlib.colors import LogNorm
 import matplotlib.pyplot as plt
 import numpy as np
 import pathlib
-from photutils.aperture import CircularAperture, ApertureStats
+from photutils.aperture import CircularAperture
 from photutils.detection import DAOStarFinder
 from scipy import ndimage
 from scipy.signal import fftconvolve
@@ -169,7 +169,7 @@ class SparkCircularAperture(SparkAperture):
 
     def set_weights(self):
         ny, nx = self.cube.flux.shape[1:]
-        ap = CircularAperture(self.center.x, self.center.y, self.radius)
+        ap = CircularAperture((self.center.x, self.center.y), self.radius)
         self.weights = ap.to_mask(method='exact').to_image((nx, ny))
 
 
@@ -247,13 +247,15 @@ class SparkCube(SparkSpec):
         if not shape in self.ap_shapes:
             print('Invalid aperture shape: %s'%shape)
             return None
+        shape_class = self.ap_shapes[shape]
+        vfields = {f.name for f in fields(shape_class)}
 
         ap_data = {
             'cube': self,
             'center': as_coord(center),
             'wave': self.wave,
         }
-        ap_data.update(kwargs)
+        ap_data.update({k:v for k,v in kwargs.items() if k in vfields})
         return self.ap_shapes[shape](**ap_data)
 
 
