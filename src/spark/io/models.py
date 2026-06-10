@@ -1,5 +1,4 @@
 from __future__ import annotations
-from abc import ABC, abstractmethod
 import astropy.units as u
 from astropy.wcs import WCS
 from dataclasses import asdict, dataclass, field
@@ -16,12 +15,12 @@ from typing import NamedTuple, Tuple
 from spark.utils import deredden
 
 
-@dataclass
+@dataclass(kw_only=True)
 class SparkInstrument:
     name: str = None
 
 
-@dataclass
+@dataclass(kw_only=True)
 class Target:
     name: str = None
     ra: float = 0.0
@@ -29,7 +28,7 @@ class Target:
     z: float = 0.0
 
 
-@dataclass
+@dataclass(kw_only=True)
 class ObservationTarget(Target):
     instrument: SparkInstrument = None
 
@@ -42,8 +41,12 @@ class Coord(NamedTuple):
         return f'({self.x}, {self.y})'
 
 
-@dataclass
-class SparkSpec(ABC):
+def as_coord(c):
+    return c if isinstance(c, Coord) else Coord(*c)
+
+
+@dataclass(kw_only=True)
+class SparkSpec():
     file: pathlib.Path = None
     wave: np.ndarray = None
     wave_unit: u.Unit = None
@@ -62,9 +65,8 @@ class SparkSpec(ABC):
 
 
     @classmethod
-    @abstractmethod
     def from_fits(cls, hdu, **kwargs):
-        pass
+        raise Exception('Unimplemented')
 
 
     def to_dict(self):
@@ -79,7 +81,7 @@ class SparkSpec(ABC):
         return s
 
 
-@dataclass
+@dataclass(kw_only=True)
 class SparkSpaxel(SparkSpec):
     cube: SparkCube = None
     coord: Coord = None
@@ -103,13 +105,100 @@ class SparkSpaxel(SparkSpec):
         return s
 
 
-    def from_fits(cls, hdu, **kwargs):
-        raise Exception('Unimplemented')
+@dataclass(kw_only=True)
+class SparkAperture(SparkSpec):
+    cube: SparkCube = None
+    center: Coord | tuple = None
+    weights: np.ndarray = None
+    method: str = 'sum'
+    name: str = None
+
+    def __post_init__(self):
+        self.wave_is_rest = self.cube.wave_is_rest
+        self.center = as_coord(self.center)
+        self.set_weights()
+
+        flux_funcs = {
+            'sum': self.sum_flux,
+            'mean': self.mean_flux,
+        }
+
+        if not self.method in flux_funcs:
+            raise Exception('Invalid flux method: %s'%self.method)
+        flux_funcs[self.method]()
+
+        for key, val in self.__dict__.items():
+            if val is None:
+                setattr(self, key, getattr(self.cube, key))
 
 
-@dataclass
+    def set_weights(self):
+        ny, nx = self.cube.flux.shape[1:]
+        # weights of all spaxels = 0.0
+        self.weights = np.zeros((nx,ny), dtype=float)
+
+
+    def sum_flux(self):
+        w = self.weights[None, :, :]
+        self.flux = np.sum(self.cube.flux*w, axis=(1,2))
+        self.err = np.sqrt(np.sum((self.cube.err*w)**2, axis=(1,2)))
+
+
+    def mean_flux(self):
+        w = self.weights[None, :, :]
+        norm = np.sum(self.weights)
+        self.flux = np.sum(self.cube.flux*w, axis=(1,2)) / norm
+        self.err = np.sqrt(np.sum((self.cube.err*w)**2, axis=(1,2))) / norm
+
+
+    def show_weights(self):
+        plt.figure()
+        plt.imshow(self.weights, origin='lower', cmap='grey')
+        plt.show()
+
+
+@dataclass(kw_only=True)
+class SparkCircularAperture(SparkAperture):
+    radius: float
+
+    def __post_init__(self):
+        super().__post_init__()
+        if self.name is None:
+            self.name = 'circap_x%d_y%d_r%d'%(self.center.x,self.center.y,self.radius)
+
+
+    def set_weights(self):
+        ny, nx = self.cube.flux.shape[1:]
+        ap = CircularAperture(self.center.x, self.center.y, self.radius)
+        self.weights = ap.to_mask(method='exact').to_image((nx, ny))
+
+
+@dataclass(kw_only=True)
+class SparkRectangularAperture(SparkAperture):
+    width: float
+    height: float = -1.0
+
+    def __post_init__(self):
+        if self.height < 0.0: self.height = self.width
+        super().__post_init__()
+
+        if self.name is None:
+            self.name = 'rectap_x%d_y%d_w%d_h%d'%(self.center.x,self.center.y,self.width,self.height)
+
+
+    def set_weights(self):
+        ny, nx = self.cube.flux.shape[1:]
+        x, y = np.meshgrid(np.arange(nx), np.arange(ny))
+        self.weights = ((np.abs(x - self.center.x) <= self.width / 2) & (np.abs(y - self.center.y) <= self.height / 2)).astype(float)
+
+
+@dataclass(kw_only=True)
 class SparkCube(SparkSpec):
     spaxel_class = SparkSpaxel
+    ap_shapes = {
+        'circular': SparkCircularAperture,
+        'rectangular': SparkRectangularAperture,
+    }
 
     shape: Tuple[int, int] = (0,0) # (nx,ny)
     wcs: WCS = None
@@ -154,32 +243,25 @@ class SparkCube(SparkSpec):
         return self.spaxel_class(**spax_data)
 
 
+    def aperture(self, shape, center, **kwargs):
+        if not shape in self.ap_shapes:
+            print('Invalid aperture shape: %s'%shape)
+            return None
+
+        ap_data = {
+            'cube': self,
+            'center': as_coord(center),
+            'wave': self.wave,
+        }
+        ap_data.update(kwargs)
+        return self.ap_shapes[shape](**ap_data)
+
+
     def get_brightest_spaxel(self, mode='median'):
         dao = DAOStarFinder(fwhm=3.0, threshold=1e-17*self.flux_unit)
         sources = dao(self.get_median_map())
         source = sources[np.argmax(sources['flux'])]
         return self.spax(round(source['xcentroid']), round(source['ycentroid']))
-
-
-    def get_circular_aperture(self, ap_coord, radius, sum_method='exact', plot=False):
-        if isinstance(ap_coord, tuple) and len(ap_coord) > 1:
-            ap_coord = Coord(x=ap_coord[0],y=ap_coord[1])
-        aperture = CircularAperture((ap_coord.x,ap_coord.y), r=radius)
-
-        if plot:
-            medcube = self.get_median_map()
-            plt.figure()
-            plt.imshow(medcube.value.T, origin='lower', norm=LogNorm())
-            aperture.plot()
-            plt.show()
-
-        apspec = np.zeros(len(self.wave))*self.flux_unit
-        aperr = np.zeros(len(self.wave))*self.flux_unit
-        for i in range(len(self.wave)):
-            apstat = ApertureStats(self.flux[:,:,i], aperture, error=self.err[:,:,i], sum_method=sum_method, subpixels=100)
-            apspec[i] = apstat.sum
-            aperr[i] = apstat.sum_err
-        return aperture, apspec, aperr
 
 
     def circular_smooth(self, radius):
@@ -199,26 +281,7 @@ class SparkCube(SparkSpec):
         self.flux = smoothed_cube*self.flux.unit
 
 
-@dataclass
+@dataclass(kw_only=True)
 class SparkSlit(SparkSpec):
     nx: int = 0
-
-
-@dataclass
-class SparkAperture(SparkSpec):
-    pass
-
-
-@dataclass
-class SparkCircularAperture(SparkAperture):
-    pass
-
-
-@dataclass
-class SparkRectangularAperture(SparkAperture):
-    pass
-
-
-
-
 
