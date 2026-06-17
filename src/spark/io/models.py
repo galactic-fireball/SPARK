@@ -48,6 +48,7 @@ def as_coord(c):
 @dataclass(kw_only=True)
 class SparkSpec():
     file: pathlib.Path = None
+    name: str = None
     wave: np.ndarray = None
     wave_unit: u.Unit = None
     wave_is_rest: bool = False
@@ -79,6 +80,15 @@ class SparkSpec():
         s += '\n\tWave: [%.04f - %.04f] %s (%s)' % (self.wave[0], self.wave[-1], str(self.wave_unit), 'Rest' if self.wave_is_rest else 'Obs')
         s += '\n\tFlux: [%.04f - $.04f] %s' % (self.flux[0], self.flux[-1], str(self.flux_unit))
         return s
+
+
+    def quick_view(self):
+        if len(self.flux.shape) > 1:
+            return
+        fix, ax = plt.subplots()
+        ax.plot(self.wave, self.flux, linewidth=1.0, color='black')
+        plt.show()
+
 
 
 @dataclass(kw_only=True)
@@ -135,7 +145,7 @@ class SparkAperture(SparkSpec):
     def set_weights(self):
         ny, nx = self.cube.flux.shape[1:]
         # weights of all spaxels = 0.0
-        self.weights = np.zeros((nx,ny), dtype=float)
+        self.weights = np.zeros((ny,nx), dtype=float)
 
 
     def sum_flux(self):
@@ -170,7 +180,7 @@ class SparkCircularAperture(SparkAperture):
     def set_weights(self):
         ny, nx = self.cube.flux.shape[1:]
         ap = CircularAperture((self.center.x, self.center.y), self.radius)
-        self.weights = ap.to_mask(method='exact').to_image((nx, ny))
+        self.weights = ap.to_mask(method='exact').to_image((ny, nx))
 
 
 @dataclass(kw_only=True)
@@ -208,6 +218,9 @@ class SparkCube(SparkSpec):
         if (self.shape == (0,0)) and (not self.flux is None):
             self.shape = self.flux.shape[2], self.flux.shape[1] # flux.shape = (nz,ny,nx)
 
+        self.flux[np.isnan(self.flux)] = 0.0
+        self.err[np.isnan(self.err)] = np.nanmedian(self.err)
+
 
     def get_median_map(self):
         medcube = np.nanmedian(self.flux, axis=0)
@@ -220,6 +233,10 @@ class SparkCube(SparkSpec):
         plt.figure()
         plt.imshow(medcube.value, origin='lower', norm=LogNorm())
         plt.show()
+
+
+    def quick_view(self):
+        self.show_median_map()
 
 
     def spax(self, x, y=None):

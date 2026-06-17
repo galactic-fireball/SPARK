@@ -44,8 +44,8 @@ class JWSTCube(SparkCube):
             cube_flux *= pxar
             cube_err *= pxar
 
-        cube_flux = cube_flux.to(sc.FLUX_UNIT_UM, equivalencies=u.spectral_density(obs_wave))
-        cube_err = cube_err.to(sc.FLUX_UNIT_UM, equivalencies=u.spectral_density(obs_wave))
+        cube_flux = cube_flux.T.to(sc.FLUX_UNIT_UM, equivalencies=u.spectral_density(obs_wave)).T
+        cube_err = cube_err.T.to(sc.FLUX_UNIT_UM, equivalencies=u.spectral_density(obs_wave)).T
         cube_err[np.isnan(cube_err)] = np.nanmedian(cube_err)
 
         inst_data['wcs'] = WCS(hdu['SCI'])
@@ -53,7 +53,7 @@ class JWSTCube(SparkCube):
         inst_data['wave_unit'] = cunit
         inst_data['flux'] = cube_flux
         inst_data['err'] = cube_err
-        inst_data['flux_unit'] = bunit
+        inst_data['flux_unit'] = sc.FLUX_UNIT_UM
         # print('WARNING: JWST fits headers do not store redshift data, please supply your own if needed')
 
         inst_data['target'] = ObservationTarget(
