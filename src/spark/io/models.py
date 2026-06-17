@@ -150,15 +150,15 @@ class SparkAperture(SparkSpec):
 
     def sum_flux(self):
         w = self.weights[None, :, :]
-        self.flux = np.sum(self.cube.flux*w, axis=(1,2))
-        self.err = np.sqrt(np.sum((self.cube.err*w)**2, axis=(1,2)))
+        self.flux = np.nansum(self.cube.flux*w, axis=(1,2))
+        self.err = np.sqrt(np.nansum((self.cube.err*w)**2, axis=(1,2)))
 
 
     def mean_flux(self):
         w = self.weights[None, :, :]
-        norm = np.sum(self.weights)
-        self.flux = np.sum(self.cube.flux*w, axis=(1,2)) / norm
-        self.err = np.sqrt(np.sum((self.cube.err*w)**2, axis=(1,2))) / norm
+        norm = np.nansum(self.weights)
+        self.flux = np.nansum(self.cube.flux*w, axis=(1,2)) / norm
+        self.err = np.sqrt(np.nansum((self.cube.err*w)**2, axis=(1,2))) / norm
 
 
     def show_weights(self):
@@ -218,8 +218,8 @@ class SparkCube(SparkSpec):
         if (self.shape == (0,0)) and (not self.flux is None):
             self.shape = self.flux.shape[2], self.flux.shape[1] # flux.shape = (nz,ny,nx)
 
-        self.flux[np.isnan(self.flux)] = 0.0
-        self.err[np.isnan(self.err)] = np.nanmedian(self.err)
+        # self.flux[np.isnan(self.flux)] = 0.0
+        # self.err[np.isnan(self.err)] = np.nanmedian(self.err)
 
 
     def get_median_map(self):
