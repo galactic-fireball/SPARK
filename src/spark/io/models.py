@@ -3,6 +3,7 @@ import astropy.units as u
 from astropy.wcs import WCS
 from dataclasses import asdict, dataclass, field, fields
 from matplotlib.colors import LogNorm
+from matplotlib.patches import Rectangle
 import matplotlib.pyplot as plt
 import numpy as np
 import pathlib
@@ -39,6 +40,10 @@ class Coord(NamedTuple):
 
     def __str__(self):
         return f'({self.x}, {self.y})'
+
+
+    def to_tuple(self):
+        return(self.x,self.y)
 
 
 def as_coord(c):
@@ -167,6 +172,16 @@ class SparkAperture(SparkSpec):
         plt.show()
 
 
+    def add_to_plot(self, ax, **kwargs):
+        kwargs = {'levels':[0.5], 'facecolor':'none', 'edgecolor':'white', 'linewidths':1.5} | kwargs
+        ax.contour(self.weights, **kwargs)
+
+
+    def add_spec_plot(self, ax, **kwargs):
+        flux = self.flux/np.nanmax(self.flux) if kwargs.pop('norm', False) else self.flux
+        ax.plot(self.wave, flux, **kwargs)
+
+
 @dataclass(kw_only=True)
 class SparkCircularAperture(SparkAperture):
     radius: float
@@ -200,6 +215,13 @@ class SparkRectangularAperture(SparkAperture):
         ny, nx = self.cube.flux.shape[1:]
         x, y = np.meshgrid(np.arange(nx), np.arange(ny))
         self.weights = ((np.abs(x - self.center.x) <= self.width / 2) & (np.abs(y - self.center.y) <= self.height / 2)).astype(float)
+
+
+    def add_to_plot(self, ax, **kwargs):
+        xy = (self.center.x - self.width/2, self.center.y - self.height/2)
+        ax.add_patch(Rectangle(xy, width=self.width, height=self.height, facecolor='none', edgecolor='orange'))
+
+
 
 
 @dataclass(kw_only=True)
