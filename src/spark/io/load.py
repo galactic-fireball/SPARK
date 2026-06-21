@@ -5,13 +5,14 @@ import warnings
 
 warnings.simplefilter('ignore', FITSFixedWarning)
 
-from spark.io.readers.jwst import NIRSPEC_IFU_Cube, MIRI_MRS_Cube
+from spark.io.readers.jwst import NIRSPEC_IFU_Cube, MIRI_MRS_Cube, DJASpec
 from spark.io.readers.sdss import SDSSSpectrum
 
 SPEC_FMTS = {
 	'SDSS': SDSSSpectrum,
 	'NIRSPEC_IFU': NIRSPEC_IFU_Cube,
 	'MIRI_MRS': MIRI_MRS_Cube,
+	'DJA': DJASpec,
 }
 
 
