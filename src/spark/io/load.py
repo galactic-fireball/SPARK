@@ -15,6 +15,9 @@ SPEC_FMTS = {
 	'DJA': DJASpec,
 }
 
+def get_supported_instruments():
+	return list(SPEC_FMTS.keys())
+
 
 def get_fits_fmt(hdu):
 	# TODO
@@ -33,7 +36,7 @@ def load_spectral_product(spec_file, fmt=None, **kwargs):
 		raise Exception('Unsupported format: %s'%fmt)
 
 	spec = SPEC_FMTS[fmt].from_fits(spec_file, **kwargs)
-	if spec.file is None:
+	if spec.file is None and isinstance(spec_file, (str,pathlib.Path)):
 		spec.file = pathlib.Path(spec_file)
 
 	return spec
