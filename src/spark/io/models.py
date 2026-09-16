@@ -7,13 +7,13 @@ from matplotlib.patches import Rectangle
 import matplotlib.pyplot as plt
 import numpy as np
 import pathlib
-from photutils.aperture import CircularAperture
+from photutils.aperture import CircularAperture, EllipticalAperture
 from photutils.detection import DAOStarFinder
 from scipy import ndimage
 from scipy.signal import fftconvolve
 from typing import NamedTuple, Tuple
 
-from spark.utils import deredden
+from spark.utils import redden, deredden
 
 
 @dataclass(kw_only=True)
@@ -47,7 +47,11 @@ class Coord(NamedTuple):
 
 
 def as_coord(c):
-    return c if isinstance(c, Coord) else Coord(*c)
+    if isinstance(c, Coord):
+        return c
+    if isinstance(c, SparkSpaxel):
+        return c.coord
+    return Coord(*c)
 
 
 @dataclass(kw_only=True)
@@ -64,7 +68,6 @@ class SparkSpec():
 
 
     def __post_init__(self):
-        print('SparkSpec __post_init__')
         if self.target.z != 0.0:
             self.wave = deredden(self.wave, z=self.target.z)
             self.wave_is_rest = True
@@ -95,6 +98,39 @@ class SparkSpec():
         plt.show()
 
 
+    def wave_mask(self, mi, ma):
+        if not isinstance(mi, u.Quantity):
+            mi = mi * self.wave.unit
+        if not isinstance(ma, u.Quantity):
+            ma = ma * self.wave.unit
+
+        mask = np.where((self.wave >= mi) & (self.wave <= ma))[0]
+        self.wave = self.wave[mask]
+
+        if len(self.flux.shape) == 1:
+            self.flux = self.flux[mask]
+            self.err = self.err[mask]
+            return
+
+        if len(self.flux.shape) == 2:
+            return # TODO
+
+        if len(self.flux.shape) == 3:
+            self.flux = self.flux[mask,:,:]
+            self.err = self.err[mask,:,:]
+
+
+    def to_obs(self):
+        if self.wave_is_rest:
+            self.wave = redden(self.wave, z=self.target.z)
+            self.wave_is_rest = False
+
+
+    def to_rest(self):
+        if not self.wave_is_rest:
+            self.wave = deredden(self.wave, z=self.target.z)
+            self.wave_is_rest = True
+
 
 @dataclass(kw_only=True)
 class SparkSpaxel(SparkSpec):
@@ -113,6 +149,16 @@ class SparkSpaxel(SparkSpec):
                 setattr(self, key, getattr(self.cube, key))
 
 
+    @property
+    def x(self):
+        return self.coord.x
+
+
+    @property
+    def y(self):
+        return self.coord.y
+
+
     def __str__(self):
         s = 'Spaxel (%d, %d) Data from: %s' % (self.coord.x, self.coord.y, self.file.stem if not self.file is None else '--')
         s += '\n\twave array: sizeof %d' % (len(self.wave))
@@ -127,6 +173,7 @@ class SparkAperture(SparkSpec):
     weights: np.ndarray = None
     method: str = 'sum'
     name: str = None
+    phot_ap = None
 
     def __post_init__(self):
         self.wave_is_rest = self.cube.wave_is_rest
@@ -173,8 +220,12 @@ class SparkAperture(SparkSpec):
 
 
     def add_to_plot(self, ax, **kwargs):
-        kwargs = {'levels':[0.5], 'facecolor':'none', 'edgecolor':'white', 'linewidths':1.5} | kwargs
-        ax.contour(self.weights, **kwargs)
+        if self.phot_ap is None:
+            kwargs = {'levels':[0.5], 'facecolor':'none', 'edgecolor':'white', 'linewidths':1.5} | kwargs
+            ax.contour(self.weights, **kwargs)
+        else:
+            kwargs = {'ax':ax, 'facecolor':'none', 'color':'white', 'linewidth':1.5} | kwargs
+            self.phot_ap.plot(**kwargs)
 
 
     def add_spec_plot(self, ax, **kwargs):
@@ -187,6 +238,9 @@ class SparkCircularAperture(SparkAperture):
     radius: float
 
     def __post_init__(self):
+        if isinstance(self.radius, u.Quantity):
+            self.radius = self.radius.value
+
         super().__post_init__()
         if self.name is None:
             self.name = 'circap_x%d_y%d_r%d'%(self.center.x,self.center.y,self.radius)
@@ -194,8 +248,8 @@ class SparkCircularAperture(SparkAperture):
 
     def set_weights(self):
         ny, nx = self.cube.flux.shape[1:]
-        ap = CircularAperture((self.center.x, self.center.y), self.radius)
-        self.weights = ap.to_mask(method='exact').to_image((ny, nx))
+        self.phot_ap = CircularAperture((self.center.x, self.center.y), self.radius)
+        self.weights = self.phot_ap.to_mask(method='exact').to_image((ny, nx))
 
 
 @dataclass(kw_only=True)
@@ -222,6 +276,26 @@ class SparkRectangularAperture(SparkAperture):
         ax.add_patch(Rectangle(xy, width=self.width, height=self.height, facecolor='none', edgecolor='orange'))
 
 
+@dataclass(kw_only=True)
+class SparkEllipticalAperture(SparkAperture):
+    a: float
+    b: float
+    theta: u.Quantity | float = 0.0
+
+    def __post_init__(self):
+        super().__post_init__()
+        if self.name is None:
+            self.name = 'ellipap_x%d_y%d'%(self.center.x,self.center.y)
+
+        if not isinstance(self.theta, u.Quantity):
+            self.theta = self.theta * u.deg
+
+
+    def set_weights(self):
+        ny, nx = self.cube.flux.shape[1:]
+        self.phot_ap = EllipticalAperture((self.center.x, self.center.y), self.a, self.b, self.theta)
+        self.weights = self.phot_ap.to_mask(method='exact').to_image((ny, nx))
+
 
 
 @dataclass(kw_only=True)
@@ -229,6 +303,7 @@ class SparkCube(SparkSpec):
     spaxel_class = SparkSpaxel
     ap_shapes = {
         'circular': SparkCircularAperture,
+        'elliptical': SparkEllipticalAperture,
         'rectangular': SparkRectangularAperture,
     }
 
@@ -250,6 +325,12 @@ class SparkCube(SparkSpec):
         return medcube
 
 
+    def get_median_spec(self):
+        medspec = np.nanmedian(self.flux, axis=(1,2))
+        medspec[np.isnan(medspec)] = 0.0
+        return medspec
+
+
     def show_median_map(self):
         medcube = self.get_median_map()
         plt.figure()
@@ -259,6 +340,15 @@ class SparkCube(SparkSpec):
 
     def quick_view(self):
         self.show_median_map()
+
+
+    def sky_map(self):
+        med_map = self.get_median_map()
+
+        fig = plt.figure()
+        ax = fig.add_subplot(111, projection=self.wcs.celestial)
+        ax.imshow(med_map.value, origin='lower', norm=LogNorm())
+        plt.show()
 
 
     def spax(self, x, y=None):
@@ -298,11 +388,18 @@ class SparkCube(SparkSpec):
         return self.ap_shapes[shape](**ap_data)
 
 
-    def get_brightest_spaxel(self, mode='median'):
-        dao = DAOStarFinder(fwhm=3.0, threshold=1e-17*self.flux_unit)
+    def get_brightest_spaxel(self, fwhm=5.0, threshold=1e-17):
+        dao = DAOStarFinder(threshold=threshold*self.flux_unit, fwhm=fwhm)
         sources = dao(self.get_median_map())
         source = sources[np.argmax(sources['flux'])]
-        return self.spax(round(source['xcentroid']), round(source['ycentroid']))
+        if 'xcentroid' in source.columns:
+            return self.spax(round(source['xcentroid']), round(source['ycentroid']))
+        else:
+            return self.spax(round(source['x_centroid']), round(source['y_centroid']))
+
+
+    def wave_slice(self, wave):
+        return self.flux[wave,:,:]
 
 
     def circular_smooth(self, radius):
@@ -320,6 +417,13 @@ class SparkCube(SparkSpec):
             smoothed_cube[i] = ndimage.convolve(cube[i], kernel, mode='reflect')
             # smoothed_cube[i] = fftconvolve(cube[i], kernel, mode='same')
         self.flux = smoothed_cube*self.flux.unit
+
+
+    def gaussian_smooth(self, sigma=1):
+        flux = self.flux.copy().value
+        flux = ndimage.gaussian_filter(flux, sigma=sigma)
+        self.flux = flux*self.flux.unit
+
 
 
 @dataclass(kw_only=True)
