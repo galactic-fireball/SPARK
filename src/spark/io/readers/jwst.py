@@ -12,6 +12,7 @@ JWST_WAVE_UNIT = u.um
 
 @dataclass
 class JWSTCube(SparkCube):
+    inst_class = SparkInstrument
 
     pix_scale: u.Unit = 0.0
 
@@ -55,12 +56,21 @@ class JWSTCube(SparkCube):
         inst_data['err'] = cube_err
         inst_data['flux_unit'] = sc.FLUX_UNIT_UM
 
+        inst_name = hdu[0].header['INSTRUME']
+        # TODO: fix
+        if inst_name == 'NIRSPEC':
+            filt = hdu[0].header['FILTER']
+            grating = hdu[0].header['GRATING']
+            instrument = NIRSpecInstrument(name=inst_name, filter=filt, grating=grating)
+        else:
+            instrument = SparkInstrument(name=inst_name)
+
         inst_data['target'] = ObservationTarget(
             name = kwargs.pop('name', hdu[0].header['TARGNAME']),
             ra = hdu[0].header['TARG_RA'],
             dec = hdu[0].header['TARG_DEC'],
             z = kwargs.pop('z', 0.0),
-            instrument = SparkInstrument(name = hdu[0].header['INSTRUME']),
+            instrument = instrument,
         )
 
         inst_data['pix_scale'] = (header['CDELT1'] * u.Unit(header['CUNIT1'])).to(u.arcsec)
@@ -77,13 +87,19 @@ class JWSTCube(SparkCube):
 
 
 @dataclass
+class NIRSpecInstrument(SparkInstrument):
+    filter: str = None
+    grating: str = None
+
+
+@dataclass
 class MIRI_MRS_Cube(JWSTCube):
     pass
 
 
 @dataclass
 class NIRSPEC_IFU_Cube(JWSTCube):
-    pass
+    inst_class = NIRSpecInstrument
 
 
 @dataclass
@@ -106,6 +122,7 @@ class DJASpec(SparkSpec):
 
         header = hdu['SPEC1D'].header
         data = hdu['SPEC1D'].data
+        sci_header = hdu['SCI'].header
 
         wave_unit = u.Unit(header['TUNIT1'])
         flux_unit = u.Unit(header['TUNIT2'])
@@ -128,12 +145,23 @@ class DJASpec(SparkSpec):
         if name is None:
             name = hdu['SCI'].header['SRCNAME']
 
+        ra, dec = 0.0, 0.0
+        for label in ['TARG_RA', 'SRCRA']:
+            if label in sci_header:
+                ra, dec = sci_header[label], sci_header[label.replace('RA','DEC')]
+                break
+
+        if 'INSTRUME' in sci_header:
+            instrument = sci_header['INSTRUME']
+        else:
+            instrument = 'NS_%s_%s'%(sci_header['GRATING'], sci_header['FILTER'])
+
         inst_data['target'] = ObservationTarget(
             name = name,
-            ra = hdu['SCI'].header['TARG_RA'],
-            dec = hdu['SCI'].header['TARG_DEC'],
+            ra = ra,
+            dec = dec,
             z = kwargs.pop('z', 0.0),
-            instrument = SparkInstrument(name = hdu['SCI'].header['INSTRUME']),
+            instrument = SparkInstrument(name = instrument),
         )
 
         inst_data.update(kwargs)

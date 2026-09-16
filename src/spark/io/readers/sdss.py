@@ -42,11 +42,14 @@ class SDSSSpectrum(SparkSpec):
         inst_data['flux_unit'] = sc.FLUX_UNIT_AA
         inst_data['disp'] = data['wdisp'] # Intrinsic dispersion of every pixel, in pixels units
 
+        z = kwargs.pop('z', 0.0)
+        if z == 0.0: z = float(hdu[2].data['z'][0])
+
         inst_data['target'] = ObservationTarget(
             name = name,
             ra = hdu[0].header['RA'],
             dec = hdu[0].header['DEC'],
-            z = kwargs.pop('z', hdu[2].data['z'][0]),
+            z = z,
             instrument = SparkInstrument(name='SDSS'),
         )
 
