@@ -32,13 +32,13 @@ class SDSSSpectrum(SparkSpec):
 
         data = hdu[1].data
 
-        inst_data['wave'] = np.power(10, data['loglam'])
+        inst_data['wave'] = np.power(10, data['loglam']) * SDSS_WAVE_UNIT
         inst_data['wave_unit'] = SDSS_WAVE_UNIT
-        inst_data['flux'] = data['flux']
+        inst_data['flux'] = data['flux'] * sc.FLUX_UNIT_AA
         err = np.sqrt(1 / data['ivar'])
         err[np.isnan(err)] = np.nanmedian(err)
         err[np.isinf(err)] = np.nanmedian(err)
-        inst_data['err'] = err
+        inst_data['err'] = err * sc.FLUX_UNIT_AA
         inst_data['flux_unit'] = sc.FLUX_UNIT_AA
         inst_data['disp'] = data['wdisp'] # Intrinsic dispersion of every pixel, in pixels units
 
