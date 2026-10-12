@@ -1,4 +1,5 @@
 from astropy import constants as const
+from astropy.coordinates import SkyCoord
 from astropy.cosmology import LambdaCDM
 from astroquery.irsa_dust import IrsaDust
 import astropy.units as u
@@ -10,6 +11,14 @@ def deredden(wave, z=0.0):
 
 def redden(wave, z=0.0):
     return wave * (1 + z)
+
+
+def to_rest(wave, z=0.0):
+    return deredden(wave, z=z)
+
+
+def to_obs(wave, z=0.0):
+    return redden(wave, z=z)
 
 
 def flux_to_lum(flux, z, cosmo=None):
@@ -24,6 +33,10 @@ def flux_to_lum(flux, z, cosmo=None):
 def get_voff(lam, lam2):
     dlam = lam2 - lam
     return (dlam / lam) * const.c.to(u.km/u.s)
+
+
+def to_velocity(wave, lam0):
+    return const.c.to(u.km/u.s) * (wave - lam0) / lam0
 
 
 def calc_redshift(line_center, feature_center):

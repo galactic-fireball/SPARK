@@ -1,5 +1,6 @@
 from astropy.coordinates import SkyCoord
 import astropy.units as u
+from itertools import groupby
 from matplotlib.colors import LogNorm
 import matplotlib.pyplot as plt
 import numpy as np
@@ -87,3 +88,58 @@ def show_median_map(cube_flux, log=False):
         plt.imshow(medcube, origin='lower')
     plt.show()
     plt.close()
+
+
+def get_mask_boundaries(in_mask):
+    masks = []
+    for val, _group in groupby(enumerate(in_mask), key=lambda x: x[1]):
+        if val: # want False vals for plotting the mask
+            continue
+        group = list(_group)
+        masks.append((group[0][0],group[-1][0]))
+    return masks
+
+
+def make_gallery_html(img_dir, cols=3):
+    HTML_TEMPLATE = """
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><title>{title}</title>
+<style>
+body {{
+    margin: 20px;
+}}
+.grid {{
+    display: grid;
+    grid-template-columns: repeat({cols}, 1fr);
+    gap: 16px;
+}}
+.card {{
+    background: white;
+    padding: 10px;
+    border-radius: 8px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+}}
+img {{
+    width: 100%;
+    height: auto;
+}}
+</style></head>
+<body>
+<h1>{title}</h1>
+<div class="grid">
+{items}
+</div></body></html>
+    """
+
+    ITEM_TEMPLATE = '<div class="card"><img src="{src}"></div>'
+
+    imgs = img_dir.glob('*.png')
+    items_html = '\n'.join(ITEM_TEMPLATE.format(src=i.name) for i in imgs)
+    html = HTML_TEMPLATE.format(cols=cols, title='Gallery', items=items_html)
+    img_dir.joinpath('gallery.html').write_text(html, encoding='utf-8')
+
+
+
+
+

@@ -61,6 +61,13 @@ def as_coord(c):
     return Coord(*c)
 
 
+class Shape(NamedTuple):
+    nx: int
+    ny: int = 0
+    nz: int = 0
+
+
+
 @dataclass(kw_only=True)
 class SparkSpec():
     file: pathlib.Path = None
@@ -176,6 +183,10 @@ class SparkSpaxel(SparkSpec):
         return self.coord.y
 
 
+    def to_sky(self):
+        pass
+
+
     def __str__(self):
         s = 'Spaxel (%d, %d) Data from: %s' % (self.coord.x, self.coord.y, self.file.stem if not self.file is None else '--')
         s += '\n\twave array: sizeof %d' % (len(self.wave))
@@ -236,6 +247,12 @@ class SparkAperture(SparkSpec):
         plt.show()
 
 
+    def quick_view_map(self):
+        fig, ax = self.cube.plot_median_map()
+        self.add_to_plot(ax)
+        plt.show()
+
+
     def add_to_plot(self, ax, **kwargs):
         if self.phot_ap is None:
             kwargs = {'levels':[0.5], 'facecolor':'none', 'edgecolor':'white', 'linewidths':1.5} | kwargs
@@ -247,7 +264,18 @@ class SparkAperture(SparkSpec):
 
     def add_spec_plot(self, ax, **kwargs):
         flux = self.flux/np.nanmax(self.flux) if kwargs.pop('norm', False) else self.flux
-        ax.plot(self.wave, flux, **kwargs)
+        ax.step(self.wave, flux, **kwargs)
+        # ax.fill_between(self.wave.value, self.flux.value-self.err.value, self.flux.value+self.err.value, step='mid', color='grey', alpha=0.5, lw=0.0, label='Noise')
+
+
+    def fringe_correct(self):
+        from jwst.residual_fringe import utils as rfutils
+        flux_um = (self.flux*sc.FLUX_UNIT_AA).to_value(sc.FLUX_UNIT_UM)
+        wave_um = (self.wave*sc.WAVE_UNIT_AA).to_value(sc.WAVE_UNIT_UM)
+
+        corr_flux = rfutils.fit_residual_fringes_1d(flux_um, wave_um, channel=3)
+        self.flux = (corr_flux*sc.FLUX_UNIT_UM).to_value(sc.FLUX_UNIT_AA)
+
 
 
 @dataclass(kw_only=True)
@@ -348,15 +376,44 @@ class SparkCube(SparkSpec):
         return medspec
 
 
-    def show_median_map(self):
+    def plot_median_map(self):
         medcube = self.get_median_map()
-        plt.figure()
-        plt.imshow(medcube.value, origin='lower', norm=LogNorm())
-        plt.show()
+        fig, ax = plt.subplots()
+        ax.imshow(medcube.value, origin='lower', norm=LogNorm())
+        return fig, ax
 
 
     def quick_view(self):
-        self.show_median_map()
+        self.plot_median_map()
+        plt.show()
+
+
+    def show_wave_map_old(self, wave):
+        idx = (np.abs(self.wave.value - wave)).argmin()
+        wave_map = self.flux[idx,:,:].value
+
+        fig = plt.figure()
+        # ax = fig.add_subplot(111, projection=self.wcs.celestial)
+        ax = fig.add_subplot()
+        ax.imshow(wave_map, origin='lower', norm=LogNorm())
+        plt.show()
+
+
+    def show_wave_map(self, wave, pad=None):
+        if pad is None: return self.show_wave_map_old(wave)
+        wmin, wmax = wave-pad, wave+pad
+
+        imin = (np.abs(self.wave.value - wmin)).argmin()
+        imax = (np.abs(self.wave.value - wmax)).argmin()
+
+        flux = self.flux[imin:imax,:,:].value
+        wave_map = np.nansum(flux, axis=0)
+
+        fig, ax = plt.subplots()
+        ax.imshow(wave_map, origin='lower', norm=LogNorm())
+        plt.show()
+
+
 
 
     def sky_map(self):
