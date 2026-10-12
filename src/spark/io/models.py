@@ -2,6 +2,7 @@ from __future__ import annotations
 import astropy.units as u
 from astropy.wcs import WCS
 from dataclasses import asdict, dataclass, field, fields
+from dust_extinction.parameter_averages import G23
 from matplotlib.colors import LogNorm
 from matplotlib.patches import Rectangle
 import matplotlib.pyplot as plt
@@ -13,7 +14,8 @@ from scipy import ndimage
 from scipy.signal import fftconvolve
 from typing import NamedTuple, Tuple
 
-from spark.utils import redden, deredden
+import spark.constants as sc
+from spark.utils import redden, deredden, ccm_unred, get_target_ebv
 
 
 @dataclass(kw_only=True)
@@ -27,6 +29,11 @@ class Target:
     ra: float = 0.0
     dec: float = 0.0
     z: float = 0.0
+    ebv: float = 0.0
+
+    def __post_init__(self):
+        if self.ebv == 0.0:
+            self.ebv = get_target_ebv(self.ra, self.dec)
 
 
 @dataclass(kw_only=True)
@@ -130,6 +137,16 @@ class SparkSpec():
         if not self.wave_is_rest:
             self.wave = deredden(self.wave, z=self.target.z)
             self.wave_is_rest = True
+
+
+    def apply_ext_corr(self, rv=3.1):
+        # ebv = self.target.get_ebv()
+        # self.flux = ccm_unred(self.wave.value, self.flux.value, ebv) * self.flux_unit
+
+        model = G23(Rv=rv)
+        self.flux = self.flux / model.extinguish(self.wave, Ebv=self.target.ebv)
+
+
 
 
 @dataclass(kw_only=True)
