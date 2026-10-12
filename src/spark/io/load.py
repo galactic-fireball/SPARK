@@ -5,13 +5,16 @@ import warnings
 
 warnings.simplefilter('ignore', FITSFixedWarning)
 
-from spark.io.readers.jwst import NIRSPEC_IFU_Cube, MIRI_MRS_Cube, DJASpec
+from spark.io.readers.jwst import NIRSPEC_IFU_Cube, NIRSPEC_MSA_Slit, MIRI_MRS_Cube, DJASpec
 from spark.io.readers.sdss import SDSSSpectrum
 
 SPEC_FMTS = {
 	'SDSS': SDSSSpectrum,
 	'NIRSPEC_IFU': NIRSPEC_IFU_Cube,
+	'NIRSPEC': NIRSPEC_IFU_Cube,
+	'NIRSPEC_MSA': NIRSPEC_MSA_Slit,
 	'MIRI_MRS': MIRI_MRS_Cube,
+	'MIRI': MIRI_MRS_Cube,
 	'DJA': DJASpec,
 }
 
@@ -25,6 +28,9 @@ def get_fits_fmt(hdu):
 	return None
 
 
+# TODO: fits open from url
+
+
 def load_spectral_product(spec_file, fmt=None, **kwargs):
 	if fmt is None:
 		hdu = fits.open(spec_file)
@@ -32,10 +38,10 @@ def load_spectral_product(spec_file, fmt=None, **kwargs):
 		hdu.close()
 	if fmt is None:
 		raise Exception('Could not determine fits format')
-	if not fmt in SPEC_FMTS:
+	if not fmt.upper() in SPEC_FMTS:
 		raise Exception('Unsupported format: %s'%fmt)
 
-	spec = SPEC_FMTS[fmt].from_fits(spec_file, **kwargs)
+	spec = SPEC_FMTS[fmt.upper()].from_fits(spec_file, **kwargs)
 	if spec.file is None and isinstance(spec_file, (str,pathlib.Path)):
 		spec.file = pathlib.Path(spec_file)
 

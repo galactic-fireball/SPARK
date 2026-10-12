@@ -425,8 +425,10 @@ class SparkCube(SparkSpec):
         self.flux = flux*self.flux.unit
 
 
-
 @dataclass(kw_only=True)
 class SparkSlit(SparkSpec):
     nx: int = 0
+    wcs: WCS = None
+
+
 
