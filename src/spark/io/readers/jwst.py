@@ -222,16 +222,23 @@ class DJASpec(SparkSpec):
                 break
 
         if 'INSTRUME' in sci_header:
-            instrument = sci_header['INSTRUME']
+            inst_name = sci_header['INSTRUME']
         else:
-            instrument = 'NS_%s_%s'%(sci_header['GRATING'], sci_header['FILTER'])
+            inst_name = 'NS_%s_%s'%(sci_header['GRATING'], sci_header['FILTER'])
+
+        if inst_name == 'NIRSPEC':
+            filt = sci_header['FILTER']
+            grating = sci_header['GRATING']
+            instrument = NIRSpecInstrument(name=inst_name, filter=filt, grating=grating)
+        else:
+            instrument = SparkInstrument(name=inst_name)
 
         inst_data['target'] = ObservationTarget(
             name = name,
             ra = ra,
             dec = dec,
             z = kwargs.pop('z', 0.0),
-            instrument = SparkInstrument(name = instrument),
+            instrument = instrument,
         )
 
         inst_data.update(kwargs)
