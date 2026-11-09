@@ -16,6 +16,7 @@ from typing import NamedTuple, Tuple
 
 import spark.constants as sc
 from spark.utils import redden, deredden, ccm_unred, get_target_ebv
+from spark.viewers.cube_viewer import generate_cube_viewer
 
 
 @dataclass(kw_only=True)
@@ -388,6 +389,10 @@ class SparkCube(SparkSpec):
         plt.show()
 
 
+    def generate_viewer(self, out_dir):
+        generate_cube_viewer(self, out_dir)
+
+
     def show_wave_map_old(self, wave):
         idx = (np.abs(self.wave.value - wave)).argmin()
         wave_map = self.flux[idx,:,:].value
@@ -412,8 +417,6 @@ class SparkCube(SparkSpec):
         fig, ax = plt.subplots()
         ax.imshow(wave_map, origin='lower', norm=LogNorm())
         plt.show()
-
-
 
 
     def sky_map(self):

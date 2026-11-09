@@ -1,0 +1,16 @@
+#plot-container {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+}
+
+#map-container {
+    width: 50vw;
+    /*height: 40vh;*/
+    aspect-ratio: 3/2;
+}
+
+#spectrum-container {
+    width: 90vw;
+}
