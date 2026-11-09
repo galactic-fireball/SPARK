@@ -2,6 +2,8 @@ const TRANSPARENT = 'rgba(0,0,0,0)';
 
 const mapID = 'map-container';
 const specID = 'spectrum-container';
+const channelID = 'channel';
+const chLabelID = 'channelLabel';
 
 let cube = null;
 
@@ -11,19 +13,26 @@ class SpectralCube {
 		this.flux = flux;
 		this.metadata = metadata;
 		[this.nz, this.ny, this.nx] = this.metadata.shape;
+		this.channel = 0;
 		this.focusX = 0;
 		this.focusY = 0;
+
+		this.mapContainer = document.getElementById(mapID);
+		this.channelSlider = document.getElementById(channelID);
+		this.chLabel = document.getElementById(chLabelID);
+
+		this.update();
+		this.initEventHandlers();
 	}
 
 	updateFocus(x, y) {
-		console.log('updateFocus');
-		console.log(x);
-		console.log(y);
-		this.focusX = x;
-		this.focusY = y;
-		updateMap(10);
-		updateSpectrum();
+		const newx = Math.max(0, Math.min(this.nx-1,Math.round(x)));
+		const newy = Math.max(0, Math.min(this.ny-1,Math.round(y)));
+		this.focusX = newx;
+		this.focusY = newy;
+		this.update();
 	}
+
 
 	getSpaxSpec(x, y) {
 		const spec = new Float32Array(this.nz);
@@ -33,6 +42,7 @@ class SpectralCube {
 		}
 		return spec;
 	}
+
 
 	getMap(w) {
 		const s = w * this.nx * this.ny;
@@ -45,76 +55,89 @@ class SpectralCube {
 
 		map = map.map(row => row.map(val => Math.log10(val)));
 
-		console.log(map);
+		// console.log(map);
 		return map;
 	}
-}
 
 
-function updateMap(w) {
-	if (!cube) { return; }
-
-	var layout = {
-		title: {text: 'Cube Viewer', subtitle: {text: 'Subtitle'}},
-		annotations: [],
-		paper_bgcolor: TRANSPARENT,
-		plot_bgcolor: TRANSPARENT,
-		font: {color: 'black', size:16},
-		xaxis: {title: {text:'X (px)'}, gridcolor: 'black', autoresize: true},
-		yaxis: {title: {text:'Y (px)'}, gridcolor: 'black', autoresize: true},
-		clickmode: 'event+select'
-	};
-
-	const heatmap = {z:cube.getMap(w),type:'heatmap'};
-	const focusBox = {
-		type: 'scatter', mode: 'markers',
-		x: [cube.focusX], y: [cube.focusY],
-		marker: {
-			symbol: 'x-thin', color: '#ffffff',
-			line: { color: '#ffffff', width: 1.0 },
-		},
-		hoverinfo: 'skip', showlegend: false
-	};
-
-	Plotly.react(mapID, [heatmap, focusBox], layout, {responsive:true});
-}
-
-
-function updateSpectrum(){
-	if (!cube) { return; }
-
-	console.log('updateSpectrum');
-	let spax = cube.getSpaxSpec(cube.focusX,cube.focusY);
-	var plot = {
-		type: 'scatter', mode: 'lines',
-		x: cube.wave,
-		y: spax,
-	};
-	var layout = {
-		xaxis: {title: 'Wavelength'}, yaxis: {title: 'Flux'}
-	};
-	Plotly.react(specID, [plot], layout, {responsive:true});
-}
-
-
-function handleClick(e) {
-	if (!cube) { return; }
-
-	if (e?.points?.length) {
-		x = Math.max(0, Math.min(cube.nx-1,Math.round(e.points[0].x)));
-		y = Math.max(0, Math.min(cube.ny-1,Math.round(e.points[0].y)));
-		cube.updateFocus(x, y);
+	update() {
+		this.updateMap();
+		this.updateSpectrum();
 	}
-}
 
 
-function initializeMap() {
-	updateMap(10);
-}
+	updateMap() {
+		var layout = {
+			title: {text: 'Cube Viewer', subtitle: {text: 'Subtitle'}},
+			annotations: [],
+			paper_bgcolor: TRANSPARENT,
+			plot_bgcolor: TRANSPARENT,
+			font: {color: 'black', size:16},
+			xaxis: {title: {text:'X (px)'}, gridcolor: 'black', autoresize: true},
+			yaxis: {title: {text:'Y (px)'}, gridcolor: 'black', autoresize: true},
+			clickmode: 'event+select'
+		};
+
+		const heatmap = {z:this.getMap(this.channel),type:'heatmap'};
+		const focusBox = {
+			type: 'scatter', mode: 'markers',
+			x: [this.focusX], y: [this.focusY],
+			marker: {
+				symbol: 'x-thin', color: '#ffffff',
+				line: { color: '#ffffff', width: 1.0 },
+			},
+			hoverinfo: 'skip', showlegend: false
+		};
+
+		Plotly.react(mapID, [heatmap, focusBox], layout, {responsive:true});
+		this.chLabel.textContent = this.wave[this.channel].toPrecision(5).toString();
+	}
 
 
-function initializeSpectrum() {
-	updateSpectrum()
+	updateSpectrum(){
+		let spax = this.getSpaxSpec(this.focusX,this.focusY);
+		var plot = {
+			type: 'scatter', mode: 'lines',
+			x: this.wave,
+			y: spax,
+		};
+		var layout = {
+			xaxis: {title: 'Wavelength'}, yaxis: {title: 'Flux'}
+		};
+		Plotly.react(specID, [plot], layout, {responsive:true});
+	}
+
+
+	onMapClick(event) {
+		if (event?.points?.length) {
+			this.updateFocus(event.points[0].x, event.points[0].y);
+		}
+	}
+
+
+	onChannelSlide(event) {
+		let ch = Number(event.target.value);
+		this.channel = Math.max(0, Math.min(this.nz-1, ch));
+		this.updateMap();
+	}
+
+
+	onKeyDown(event) {
+		if (['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName)) { return; }
+
+		if (event.key === 'ArrowUp') { this.updateFocus(this.focusX, this.focusY+1); }
+		else if (event.key === 'ArrowDown') { this.updateFocus(this.focusX, this.focusY-1); }
+		else if (event.key === 'ArrowLeft') { this.updateFocus(this.focusX-1, this.focusY); }
+		else if (event.key === 'ArrowRight') { this.updateFocus(this.focusX+1, this.focusY); }
+	}
+
+
+	initEventHandlers() {
+		this.mapContainer.on('plotly_click', (e) => {this.onMapClick(e);});
+		this.channelSlider.max = this.nz-1;
+		this.channelSlider.addEventListener('input', (e) => {this.onChannelSlide(e);});
+		window.addEventListener('keydown', (e) => {this.onKeyDown(e);});
+	}
 }
 
 
@@ -140,11 +163,6 @@ async function loadSpectralCube() {
 async function initialize() {
 	await loadSpectralCube();
 	console.log(cube);
-	initializeMap();
-	initializeSpectrum();
-
-	const mapContainer = document.getElementById(mapID);
-	mapContainer.on('plotly_click', handleClick);
 }
 
 
